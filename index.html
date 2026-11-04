@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="ca">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Caça Quarks</title>
+<style>
+  :root { --bg:#14102a; --panel:#221b45; --ink:#f4f1ff; --muted:#a9a2d6; --ok:#4ade80; --bad:#f87171; --acc:#fbbf24; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family: system-ui, "Segoe UI", sans-serif; display:flex; justify-content:center; align-items:center; min-height:100vh; }
+  #wrap { display:flex; gap:16px; padding:16px; align-items:flex-start; }
+  #view { position:relative; }
+  canvas#screen { width:min(880px, calc(100vw - 360px)); aspect-ratio:16/10; height:auto; image-rendering:pixelated; border-radius:12px; display:block; background:#000; }
+  #prompt { position:absolute; left:50%; bottom:24px; transform:translateX(-50%); background:#000a; padding:8px 16px; border-radius:20px; font-weight:600; display:none; }
+  #flash { position:absolute; left:50%; top:30px; transform:translateX(-50%); padding:10px 20px; border-radius:12px; font-weight:700; font-size:20px; display:none; text-align:center; }
+  #cross { position:absolute; left:50%; top:50%; width:14px; height:14px; margin:-7px 0 0 -7px; border:2px solid #fff8; border-radius:50%; }
+  #side { width:300px; background:var(--panel); border-radius:12px; padding:16px; }
+  #side h2 { margin:0 0 4px; font-size:30px; }
+  #side .sub { color:var(--muted); margin-bottom:12px; }
+  table { width:100%; border-collapse:collapse; font-size:16px; }
+  th, td { padding:6px 4px; text-align:center; }
+  th:first-child, td:first-child { text-align:left; }
+  thead th { color:var(--muted); font-weight:500; font-size:13px; }
+  tbody tr { border-top:1px solid #ffffff18; }
+  td.ok { color:var(--ok); } td.no { color:var(--muted); }
+  #slots { display:flex; gap:10px; margin:16px 0; justify-content:center; }
+  .slot { width:72px; height:72px; border:2px dashed #ffffff40; border-radius:12px; display:flex; align-items:center; justify-content:center; }
+  .slot canvas { width:64px; height:64px; }
+  #timer { font-size:28px; font-variant-numeric:tabular-nums; text-align:center; font-weight:700; }
+  #round { text-align:center; color:var(--muted); }
+  .keys { font-size:13px; color:var(--muted); margin-top:14px; line-height:1.6; }
+  kbd { background:#ffffff20; border-radius:4px; padding:1px 6px; font-family:inherit; color:var(--ink); }
+  #overlay { position:fixed; inset:0; background:#0b0820ee; display:flex; align-items:center; justify-content:center; z-index:10; }
+  .card { background:var(--panel); padding:32px 40px; border-radius:16px; max-width:620px; text-align:center; }
+  .card h1 { margin:0 0 6px; font-size:40px; }
+  .card p { color:var(--muted); line-height:1.5; }
+  .levels { display:flex; gap:10px; justify-content:center; margin:18px 0; }
+  .levels button, .go { font:inherit; border:0; border-radius:10px; padding:10px 16px; cursor:pointer; }
+  .levels button { background:#ffffff18; color:var(--ink); }
+  .levels button.sel { background:var(--acc); color:#1a1300; font-weight:700; }
+  .levels button:disabled { opacity:.4; cursor:not-allowed; }
+  .go { background:var(--ok); color:#052e12; font-weight:800; font-size:20px; padding:12px 32px; }
+  #hof { margin:18px auto 0; max-width:360px; font-size:15px; }
+  #hof h3 { margin:0 0 6px; color:var(--acc); }
+  #hof td { padding:3px 6px; }
+  #hof tr.me td { color:var(--acc); font-weight:700; }
+  .card input { font:inherit; font-size:20px; padding:10px 14px; border-radius:10px; border:2px solid #ffffff30; background:#0b0820; color:var(--ink); width:260px; text-align:center; margin:8px 0 14px; }
+  #legend { display:flex; gap:8px; justify-content:center; margin:14px 0; flex-wrap:wrap; }
+  #legend div { text-align:center; font-size:12px; color:var(--muted); }
+  #legend canvas { width:56px; height:56px; display:block; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="view">
+    <canvas id="screen" width="640" height="400"></canvas>
+    <div id="cross"></div>
+    <div id="prompt">Prem <kbd>ESPAI</kbd> per capturar</div>
+    <div id="flash"></div>
+  </div>
+  <div id="side">
+    <div id="round"></div>
+    <h2 id="tname">—</h2>
+    <div class="sub" id="tdesc"></div>
+    <table>
+      <thead><tr><th>Nombre quàntic</th><th>Objectiu</th><th>Tens</th><th></th></tr></thead>
+      <tbody id="qn"></tbody>
+    </table>
+    <div id="slots"><div class="slot"></div><div class="slot"></div><div class="slot"></div></div>
+    <div class="keys">
+      <kbd>W A S D</kbd> / fletxes: moure's<br>
+      Ratolí (clica la pantalla): girar<br>
+      <kbd>ESPAI</kbd>: capturar un quark<br>
+      <kbd>⌫</kbd>: alliberar l'últim quark
+    </div>
+  </div>
+</div>
+
+<div id="overlay">
+  <div class="card" id="card"></div>
+</div>
+
+<script>
+// ---------- Física ----------
+// Q en terços, I3 en meitats (enters per evitar errors de coma flotant)
+const QUARKS = {
+  u: { name:'up',      Q: 2, I3: 1, S: 0, C: 0, B: 0, color:'#ff8a3d' },
+  d: { name:'down',    Q:-1, I3:-1, S: 0, C: 0, B: 0, color:'#3d9bff' },
+  s: { name:'strange', Q:-1, I3: 0, S:-1, C: 0, B: 0, color:'#3ddc84' },
+  c: { name:'charm',   Q: 2, I3: 0, S: 0, C: 1, B: 0, color:'#ff5fa8' },
+  b: { name:'bottom',  Q:-1, I3: 0, S: 0, C: 0, B:-1, color:'#a26bff' },
+};
+const BARYONS = [
+  ['p', 'protó', 'uud'], ['n', 'neutró', 'udd'],
+  ['Δ⁺⁺', 'delta doblement carregada', 'uuu'], ['Δ⁻', 'delta negativa', 'ddd'],
+  ['Λ⁰', 'lambda', 'uds'], ['Σ⁺', 'sigma positiva', 'uus'], ['Σ⁻', 'sigma negativa', 'dds'],
+  ['Ξ⁰', 'xi neutra', 'uss'], ['Ξ⁻', 'xi negativa', 'dss'], ['Ω⁻', 'omega', 'sss'],
+  ['Λc⁺', 'lambda encantada', 'udc'], ['Σc⁺⁺', 'sigma encantada', 'uuc'],
+  ['Ξc⁺', 'xi encantada', 'usc'], ['Ξc⁰', 'xi encantada neutra', 'dsc'], ['Ωc⁰', 'omega encantada', 'ssc'],
+  ['Ξcc⁺⁺', 'xi doblement encantada', 'ucc'],
+  ['Λb⁰', 'lambda bella', 'udb'], ['Σb⁺', 'sigma bella', 'uub'], ['Σb⁻', 'sigma bella negativa', 'ddb'],
+  ['Ξb⁰', 'xi bella', 'usb'], ['Ξb⁻', 'xi bella negativa', 'dsb'], ['Ωb⁻', 'omega bella', 'ssb'],
+];
+const PROPS = [
+  ['Q', 'Càrrega elèctrica', 3], ['I3', 'Isospí (I₃)', 2], ['S', 'Estranyesa', 1],
+  ['C', 'Encant', 1], ['B', 'Bellesa', 1],
+];
+function sumQN(flavors) {
+  const r = { Q:0, I3:0, S:0, C:0, B:0 };
+  for (const f of flavors) for (const k in r) r[k] += QUARKS[f][k];
+  return r;
+}
+function fmt(n, den) {
+  if (n === 0) return '0';
+  const sign = n > 0 ? '+' : '−', a = Math.abs(n);
+  return a % den === 0 ? sign + (a / den) : sign + a + '/' + den;
+}
+
+// ---------- Mapa ----------
+// Laberint nou a cada barió: laberint "perfecte" + bucles + algunes sales obertes.
+// grid[y][x] = 0 buit, >0 índex de textura + 1
+// Nivell 1: mapa petit fix (com la primera versió)
+const SMALL_MAP = [
+  "########################",
+  "#......#.......#.......#",
+  "#......#.......#.......#",
+  "#..##..#..###..#..##...#",
+  "#......................#",
+  "#......#.......#.......#",
+  "####.###########.####..#",
+  "#......#.......#.......#",
+  "#......#...#...#..#....#",
+  "#..........#...........#",
+  "#......#...#...#..#....#",
+  "####.####.###.####.#####",
+  "#......#.......#.......#",
+  "#..#...#...#...........#",
+  "#..............#...#...#",
+  "########################",
+];
+const LEVELS = {
+  1: { name: 'Laberint petit', quarks: 18, perFlavor: 2 },
+  2: { name: 'Laberint gran', quarks: 44, perFlavor: 5 },
+};
+let MW, MH, grid;
+const wall = (x, y) => x < 0 || y < 0 || x >= MW || y >= MH || grid[y | 0][x | 0] > 0;
+function genMap() {
+  if (level === 1) {
+    MW = SMALL_MAP[0].length; MH = SMALL_MAP.length;
+    grid = SMALL_MAP.map(r => [...r].map(c => c === '#' ? 1 : 0));
+  } else {
+    MW = 33; MH = 25;
+    genMaze();
+  }
+  // cada zona té el seu estil de paret, amb cartells de física aquí i allà
+  const zoneTex = shuffle([1, 2, 3, 4, 5]);
+  for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) if (grid[y][x]) {
+    const open = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => grid[y + dy] && grid[y + dy][x + dx] === 0);
+    grid[y][x] = open && Math.random() < 0.08 ? 6 + (Math.random() * 3 | 0)
+      : zoneTex[((x / 11 | 0) + (y / 9 | 0) * 2) % 5];
+  }
+}
+function genMaze() {
+  grid = Array.from({ length: MH }, () => Array(MW).fill(1));
+  const st = [[1, 1]]; grid[1][1] = 0;
+  while (st.length) {
+    const [cx, cy] = st[st.length - 1];
+    const n = shuffle([[2, 0], [-2, 0], [0, 2], [0, -2]]).find(([dx, dy]) => {
+      const nx = cx + dx, ny = cy + dy;
+      return nx > 0 && ny > 0 && nx < MW - 1 && ny < MH - 1 && grid[ny][nx];
+    });
+    if (!n) { st.pop(); continue; }
+    grid[cy + n[1] / 2][cx + n[0] / 2] = 0; grid[cy + n[1]][cx + n[0]] = 0;
+    st.push([cx + n[0], cy + n[1]]);
+  }
+  for (let y = 1; y < MH - 1; y++) for (let x = 1; x < MW - 1; x++)
+    if (grid[y][x] && x % 2 !== y % 2 && Math.random() < 0.22) grid[y][x] = 0;
+  for (let i = 0; i < 6; i++) {
+    const w = 3 + (Math.random() * 3 | 0), h = 3 + (Math.random() * 3 | 0);
+    const x0 = 1 + (Math.random() * (MW - w - 2) | 0), y0 = 1 + (Math.random() * (MH - h - 2) | 0);
+    for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) grid[y][x] = 0;
+  }
+}
+
+// ---------- Textures de paret (dibuixades per codi) ----------
+const rnd = (a, b) => a + Math.random() * (b - a);
+function tex(draw) { const c = document.createElement('canvas'); c.width = c.height = 64; draw(c.getContext('2d')); return c; }
+function labBase(g) {
+  g.fillStyle = '#aab3c2'; g.fillRect(0, 0, 64, 64);
+  g.strokeStyle = '#7d8696'; g.lineWidth = 2; g.strokeRect(1, 1, 62, 62);
+  g.fillStyle = '#6b7383'; for (const [x, y] of [[5, 5], [59, 5], [5, 59], [59, 59]]) { g.beginPath(); g.arc(x, y, 1.6, 0, 7); g.fill(); }
+}
+const TEX = [
+  tex(g => { // maons
+    g.fillStyle = '#5a3328'; g.fillRect(0, 0, 64, 64);
+    for (let r = 0; r < 8; r++) for (let c = -1; c < 4; c++) {
+      g.fillStyle = `hsl(${rnd(8, 20)},${rnd(40, 55)}%,${rnd(34, 46)}%)`;
+      g.fillRect(c * 16 + (r % 2) * 8 + 1, r * 8 + 1, 14, 6);
+    }
+  }),
+  tex(g => { // panells de laboratori amb franja de perill
+    labBase(g);
+    g.fillStyle = '#c4ccd8'; g.fillRect(8, 8, 48, 36);
+    g.fillStyle = '#222'; g.fillRect(0, 52, 64, 8);
+    g.fillStyle = '#f5c518'; for (let x = -8; x < 64; x += 12) { g.beginPath(); g.moveTo(x, 60); g.lineTo(x + 6, 52); g.lineTo(x + 12, 52); g.lineTo(x + 6, 60); g.fill(); }
+  }),
+  tex(g => { // circuit electrònic (detector)
+    g.fillStyle = '#0d3b2c'; g.fillRect(0, 0, 64, 64);
+    g.strokeStyle = '#3ddc84'; g.lineWidth = 1.5;
+    for (let i = 0; i < 9; i++) {
+      let x = rnd(0, 64) | 0, y = rnd(0, 64) | 0; g.beginPath(); g.moveTo(x, y);
+      for (let k = 0; k < 3; k++) { k % 2 ? (y = rnd(0, 64) | 0) : (x = rnd(0, 64) | 0); g.lineTo(x, y); }
+      g.stroke(); g.fillStyle = '#e8d27a'; g.beginPath(); g.arc(x, y, 2.2, 0, 7); g.fill();
+    }
+    g.fillStyle = '#111'; g.fillRect(22, 22, 20, 20);
+    g.fillStyle = '#bbb'; for (let i = 0; i < 4; i++) { g.fillRect(19, 25 + i * 5, 3, 2); g.fillRect(42, 25 + i * 5, 3, 2); }
+  }),
+  tex(g => { // rajoles ceràmiques
+    g.fillStyle = '#e8eef5'; g.fillRect(0, 0, 64, 64);
+    for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
+      g.fillStyle = `hsl(${rnd(190, 215)},${rnd(45, 65)}%,${rnd(42, 58)}%)`;
+      g.fillRect(x * 16 + 1, y * 16 + 1, 14, 14);
+    }
+  }),
+  tex(g => { // fusta
+    for (let x = 0; x < 64; x += 16) {
+      g.fillStyle = `hsl(${rnd(25, 35)},${rnd(40, 55)}%,${rnd(30, 40)}%)`; g.fillRect(x, 0, 16, 64);
+      g.strokeStyle = '#0003'; g.lineWidth = 1;
+      for (let i = 0; i < 4; i++) { g.beginPath(); const xx = x + rnd(2, 14); g.moveTo(xx, 0); g.bezierCurveTo(xx + 3, 20, xx - 3, 44, xx, 64); g.stroke(); }
+      g.fillStyle = '#0005'; g.fillRect(x, 0, 1, 64);
+    }
+  }),
+  tex(g => { // cartell: diagrama de Feynman (gluó entre dos quarks)
+    labBase(g); g.fillStyle = '#fffdf3'; g.fillRect(10, 8, 44, 48);
+    g.strokeStyle = '#1b1240'; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(16, 18); g.lineTo(32, 26); g.lineTo(48, 18); g.moveTo(16, 50); g.lineTo(32, 42); g.lineTo(48, 50); g.stroke();
+    g.strokeStyle = '#e0457b'; g.beginPath();
+    for (let y = 26; y <= 42; y += 0.5) g.lineTo(32 + 4 * Math.sin((y - 26) * 1.2), y);
+    g.stroke();
+  }),
+  tex(g => { // cartell: traces d'una cambra de bombolles
+    labBase(g); g.fillStyle = '#0b1026'; g.fillRect(10, 8, 44, 48);
+    g.lineWidth = 1.2;
+    for (const col of ['#7dd3fc', '#fbbf24', '#f472b6']) {
+      g.strokeStyle = col; g.beginPath();
+      let a = rnd(0, 6), r = rnd(14, 18), cx = 32, cy = 32;
+      for (let i = 0; i < 60; i++) { g.lineTo(cx + r * Math.cos(a), cy + r * Math.sin(a)); a += 0.2; r *= 0.96; }
+      g.stroke();
+    }
+  }),
+  tex(g => { // cartell: "QCD" amb els tres colors
+    labBase(g); g.fillStyle = '#221b45'; g.fillRect(10, 8, 44, 48);
+    [['#ef4444', 24, 26], ['#22c55e', 40, 26], ['#3b82f6', 32, 40]].forEach(([c, x, y]) => {
+      g.fillStyle = c; g.globalAlpha = 0.85; g.beginPath(); g.arc(x, y, 9, 0, 7); g.fill();
+    });
+    g.globalAlpha = 1; g.fillStyle = '#fff'; g.font = 'bold 9px system-ui'; g.textAlign = 'center'; g.fillText('QCD', 32, 54);
+  }),
+];
+
+// ---------- Sprites "personatge" ----------
+function makeQuarkSprite(f, size = 128) {
+  const c = document.createElement('canvas'); c.width = c.height = size;
+  const g = c.getContext('2d'), s = size / 128, col = QUARKS[f].color;
+  g.scale(s, s);
+  // ombra
+  g.fillStyle = '#0004'; g.beginPath(); g.ellipse(64, 122, 34, 6, 0, 0, 7); g.fill();
+  // braços
+  g.strokeStyle = col; g.lineWidth = 8; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(22, 72); g.lineTo(8, 52); g.moveTo(106, 72); g.lineTo(120, 52); g.stroke();
+  // cos
+  const grd = g.createRadialGradient(50, 45, 8, 64, 66, 54);
+  grd.addColorStop(0, '#fff'); grd.addColorStop(0.18, col); grd.addColorStop(1, shade(col, -0.35));
+  g.fillStyle = grd; g.beginPath(); g.arc(64, 68, 48, 0, 7); g.fill();
+  // ulls
+  for (const ex of [48, 80]) {
+    g.fillStyle = '#fff'; g.beginPath(); g.ellipse(ex, 56, 11, 13, 0, 0, 7); g.fill();
+    g.fillStyle = '#1b1240'; g.beginPath(); g.arc(ex + 2, 58, 6, 0, 7); g.fill();
+    g.fillStyle = '#fff'; g.beginPath(); g.arc(ex + 4, 55, 2, 0, 7); g.fill();
+  }
+  // galtes
+  g.fillStyle = '#ff7aa880'; g.beginPath(); g.arc(36, 76, 6, 0, 7); g.arc(92, 76, 6, 0, 7); g.fill();
+  // somriure
+  g.strokeStyle = '#1b1240'; g.lineWidth = 4;
+  g.beginPath(); g.arc(64, 72, 12, 0.15 * Math.PI, 0.85 * Math.PI); g.stroke();
+  // lletra
+  g.fillStyle = '#fff'; g.strokeStyle = shade(col, -0.5); g.lineWidth = 5;
+  g.font = 'bold 30px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.strokeText(f, 64, 101); g.fillText(f, 64, 101);
+  // detalls per personalitat
+  if (f === 's') { g.fillStyle = '#1b1240'; g.fillRect(34, 48, 60, 6); }            // cella de "estrany"
+  if (f === 'c') { star(g, 64, 18, 9, '#ffe066'); }                                  // estrella encantadora
+  if (f === 'b') { g.fillStyle = '#ffe066'; g.beginPath(); g.moveTo(44, 26); g.lineTo(50, 12); g.lineTo(58, 22); g.lineTo(64, 8); g.lineTo(70, 22); g.lineTo(78, 12); g.lineTo(84, 26); g.fill(); } // corona de "bellesa"
+  return c;
+}
+function star(g, x, y, r, col) {
+  g.fillStyle = col; g.beginPath();
+  for (let i = 0; i < 10; i++) { const a = i * Math.PI / 5 - Math.PI / 2, rr = i % 2 ? r * 0.45 : r; g.lineTo(x + rr * Math.cos(a), y + rr * Math.sin(a)); }
+  g.fill();
+}
+function shade(hex, k) {
+  const n = parseInt(hex.slice(1), 16); let r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+  const f = v => Math.max(0, Math.min(255, Math.round(k < 0 ? v * (1 + k) : v + (255 - v) * k)));
+  return `rgb(${f(r)},${f(g)},${f(b)})`;
+}
+const SPRITES = {}; for (const f in QUARKS) SPRITES[f] = makeQuarkSprite(f);
+
+// ---------- Estat del joc ----------
+const ROUNDS = 3, RELEASE_PENALTY = 3, QUARK_SPEED = 0.7; // jugador: 3 caselles/s
+const cv = document.getElementById('screen'), ctx = cv.getContext('2d');
+const W = cv.width, H = cv.height, zbuf = new Float32Array(W);
+let player, quarks, caught, target, roundIdx, elapsed, running = false, flashT = 0, lastT = 0, level = 1, usedTargets;
+const keys = {};
+
+function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.random() * (i + 1) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+function newRound() {
+  let pool = BARYONS.filter(b => !usedTargets.includes(b[0]));
+  target = pool[Math.random() * pool.length | 0]; usedTargets.push(target[0]);
+  genMap();
+  player = { x: 1.5, y: 1.5, a: wall(2, 1) ? Math.PI / 2 : 0 };
+  caught = [];
+  // quarks necessaris + distractors, amb mínim 2 de cada sabor
+  const flavors = [...target[2]];
+  const L = LEVELS[level];
+  for (const f in QUARKS) for (let i = 0; i < L.perFlavor; i++) flavors.push(f);
+  while (flavors.length < L.quarks) flavors.push('udsudscb'[Math.random() * 8 | 0]);
+  const cells = [];
+  for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++)
+    if (!wall(x, y) && Math.hypot(x + .5 - player.x, y + .5 - player.y) > 3) cells.push([x + .5, y + .5]);
+  shuffle(cells);
+  quarks = flavors.map((f, i) => newQuark(f, cells[i][0], cells[i][1]));
+  updatePanel();
+}
+
+function newQuark(f, x, y) {
+  return { f, x, y, ph: Math.random() * 6, grab: 0, dir: Math.random() * 6.28, t: Math.random() * 3 };
+}
+
+function startGame() {
+  roundIdx = 0; elapsed = 0; usedTargets = [];
+  newRound(); running = true;
+  document.getElementById('overlay').style.display = 'none';
+  lastT = performance.now();
+}
+
+// ---------- Entrada ----------
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') { if (e.code === 'Enter') e.target.nextElementSibling.nextElementSibling.click(); return; }
+  keys[e.code] = true;
+  if (!running) { if (e.code === 'Enter') startGame(); return; }
+  if (e.code === 'Space') { e.preventDefault(); tryCapture(); }
+  if (e.code === 'Backspace') { e.preventDefault(); release(); }
+});
+addEventListener('keyup', e => keys[e.code] = false);
+cv.addEventListener('click', () => cv.requestPointerLock && cv.requestPointerLock());
+addEventListener('mousemove', e => { if (document.pointerLockElement === cv && running) player.a += e.movementX * 0.0025; });
+
+function targetable() {
+  let best = null, bd = 1.8;
+  for (const q of quarks) {
+    if (q.grab) continue;
+    const dx = q.x - player.x, dy = q.y - player.y, d = Math.hypot(dx, dy);
+    let da = Math.atan2(dy, dx) - player.a; da = Math.atan2(Math.sin(da), Math.cos(da));
+    if (d < bd && Math.abs(da) < 0.45 && d < zbuf[W / 2 | 0] + 0.3) { best = q; bd = d; }
+  }
+  return best;
+}
+function tryCapture() {
+  const q = targetable();
+  if (!q) return;
+  if (caught.length >= 3) { flash('Ja tens 3 quarks! Allibera\'n un amb ⌫', 'bad'); return; }
+  q.grab = 0.001; caught.push(q.f); updatePanel(); checkWin();
+}
+function release() {
+  if (!caught.length) return;
+  const f = caught.pop(); elapsed += RELEASE_PENALTY;
+  // el quark alliberat reapareix davant del jugador
+  let x = player.x + Math.cos(player.a) * 0.9, y = player.y + Math.sin(player.a) * 0.9;
+  if (wall(x, y)) { x = player.x; y = player.y; }
+  quarks.push(newQuark(f, x, y));
+  flash(`Has alliberat un quark ${f}`, 'bad'); updatePanel();
+}
+function checkWin() {
+  if (caught.length < 3) return;
+  const have = sumQN(caught), want = sumQN([...target[2]]);
+  if (PROPS.every(([k]) => have[k] === want[k])) {
+    roundIdx++;
+    if (roundIdx >= ROUNDS) return finish();
+    flash(`Has format ${target[0]}! 🎉`, 'ok');
+    setTimeout(() => { if (running) newRound(); }, 900);
+  } else flash(`No és ${target[0]}… allibera un quark (⌫)`, 'bad');
+}
+function finish() {
+  running = false; document.exitPointerLock && document.exitPointerLock();
+  const t = Math.round(elapsed * 10) / 10;
+  document.getElementById('card').innerHTML = `<h1>Fantàstic! 🎉</h1>
+    <p>Has format ${ROUNDS} barions en <b style="color:var(--acc);font-size:28px">${t.toFixed(1)} s</b></p>
+    <p>Escriu el teu nom per entrar al Saló de la Fama:</p>
+    <input id="name" maxlength="20" placeholder="El teu nom" autocomplete="off"><br>
+    <button class="go" onclick="saveScore(${t})">Desa</button>`;
+  document.getElementById('overlay').style.display = 'flex';
+  document.getElementById('name').focus();
+}
+function loadHof(lv) { try { return JSON.parse(localStorage.getItem('quarkHof' + lv) || '[]'); } catch (e) { return []; } }
+function saveScore(t) {
+  const name = document.getElementById('name').value.trim() || 'Anònim';
+  const entry = { name, t, id: Date.now() };
+  const hof = [...loadHof(level), entry].sort((a, b) => a.t - b.t).slice(0, 10);
+  try { localStorage.setItem('quarkHof' + level, JSON.stringify(hof)); } catch (e) {}
+  const rank = hof.findIndex(e => e.id === entry.id);
+  showMenu(`<h1>Caça Quarks</h1><p>${rank >= 0 ? `${name}, ets el número <b>${rank + 1}</b>! 🏆` : `Bona feina, ${name}! Torna-ho a provar per entrar al top 10.`}</p>`, entry.id);
+}
+function escapeHtml(s) { return s.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`); }
+
+function flash(msg, kind) {
+  const el = document.getElementById('flash');
+  el.textContent = msg; el.style.display = 'block';
+  el.style.background = kind === 'ok' ? '#166534ee' : '#7f1d1dee'; flashT = 1.6;
+}
+
+// ---------- Panell ----------
+function updatePanel() {
+  document.getElementById('round').textContent = `Barió ${Math.min(roundIdx + 1, ROUNDS)} de ${ROUNDS}`;
+  document.getElementById('tname').textContent = target[0];
+  document.getElementById('tdesc').textContent = target[1];
+  const have = sumQN(caught), want = sumQN([...target[2]]);
+  document.getElementById('qn').innerHTML = PROPS.map(([k, label, den]) => {
+    const ok = have[k] === want[k];
+    return `<tr><td>${label}</td><td>${fmt(want[k], den)}</td><td>${fmt(have[k], den)}</td><td class="${ok ? 'ok' : 'no'}">${ok ? '✓' : '·'}</td></tr>`;
+  }).join('');
+  document.querySelectorAll('.slot').forEach((s, i) => {
+    s.innerHTML = '';
+    if (caught[i]) { const c = makeQuarkSprite(caught[i], 64); s.appendChild(c); }
+  });
+}
+
+// ---------- Bucle ----------
+function update(dt) {
+  elapsed += dt;
+  const sp = 3 * dt, rot = 2.4 * dt;
+  if (keys.ArrowLeft) player.a -= rot;
+  if (keys.ArrowRight) player.a += rot;
+  let mx = 0, my = 0;
+  const ca = Math.cos(player.a), sa = Math.sin(player.a);
+  if (keys.KeyW || keys.ArrowUp) { mx += ca; my += sa; }
+  if (keys.KeyS || keys.ArrowDown) { mx -= ca; my -= sa; }
+  if (keys.KeyA) { mx += sa; my -= ca; }
+  if (keys.KeyD) { mx -= sa; my += ca; }
+  const r = 0.25;
+  if (!wall(player.x + mx * sp + Math.sign(mx) * r, player.y)) player.x += mx * sp;
+  if (!wall(player.x, player.y + my * sp + Math.sign(my) * r)) player.y += my * sp;
+  for (const q of quarks) {
+    q.ph += dt * 3;
+    if (q.grab) { // vola cap al jugador
+      q.grab += dt * 3; q.x += (player.x - q.x) * dt * 8; q.y += (player.y - q.y) * dt * 8;
+    } else { // passeja lentament, canviant de direcció de tant en tant
+      if ((q.t -= dt) <= 0) { q.dir = Math.random() * 6.28; q.t = 2 + Math.random() * 3; }
+      const v = QUARK_SPEED * dt, cx = Math.cos(q.dir), cy = Math.sin(q.dir), qr = 0.3;
+      if (!wall(q.x + cx * v + Math.sign(cx) * qr, q.y)) q.x += cx * v; else q.t = 0;
+      if (!wall(q.x, q.y + cy * v + Math.sign(cy) * qr)) q.y += cy * v; else q.t = 0;
+    }
+  }
+  quarks = quarks.filter(q => q.grab < 1);
+  if (flashT > 0 && (flashT -= dt) <= 0) document.getElementById('flash').style.display = 'none';
+}
+
+function render() {
+  const dirX = Math.cos(player.a), dirY = Math.sin(player.a), plX = -dirY * 0.66, plY = dirX * 0.66;
+  // cel i terra
+  let g = ctx.createLinearGradient(0, 0, 0, H / 2); g.addColorStop(0, '#1d1640'); g.addColorStop(1, '#3a2f7a');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H / 2);
+  g = ctx.createLinearGradient(0, H / 2, 0, H); g.addColorStop(0, '#2a2348'); g.addColorStop(1, '#4a3f78');
+  ctx.fillStyle = g; ctx.fillRect(0, H / 2, W, H / 2);
+  // parets (DDA)
+  for (let x = 0; x < W; x++) {
+    const cam = 2 * x / W - 1, rx = dirX + plX * cam, ry = dirY + plY * cam;
+    let mx = player.x | 0, my = player.y | 0;
+    const ddx = Math.abs(1 / rx), ddy = Math.abs(1 / ry);
+    const stx = rx < 0 ? -1 : 1, sty = ry < 0 ? -1 : 1;
+    let sdx = (rx < 0 ? player.x - mx : mx + 1 - player.x) * ddx;
+    let sdy = (ry < 0 ? player.y - my : my + 1 - player.y) * ddy;
+    let side = 0;
+    for (let i = 0; i < 64; i++) {
+      if (sdx < sdy) { sdx += ddx; mx += stx; side = 0; } else { sdy += ddy; my += sty; side = 1; }
+      if (wall(mx, my)) break;
+    }
+    const dist = side ? sdy - ddy : sdx - ddx;
+    zbuf[x] = dist;
+    const h = H / dist, top = (H - h) / 2;
+    let wx = side ? player.x + dist * rx : player.y + dist * ry; wx -= Math.floor(wx);
+    if (side ? ry > 0 : rx < 0) wx = 1 - wx; // evita textures en mirall
+    const t = TEX[grid[my][mx] - 1];
+    ctx.drawImage(t, wx * 64 | 0, 0, 1, 64, x, top, 1, h);
+    const k = Math.max(0.2, 1 - dist / 16) * (side ? 0.8 : 1);
+    ctx.fillStyle = `rgba(14,10,36,${1 - k})`;
+    ctx.fillRect(x, top, 1, h);
+  }
+  // sprites
+  const inv = 1 / (plX * dirY - dirX * plY);
+  const vis = quarks.map(q => ({ q, d: (q.x - player.x) ** 2 + (q.y - player.y) ** 2 })).sort((a, b) => b.d - a.d);
+  for (const { q } of vis) {
+    const sx = q.x - player.x, sy = q.y - player.y;
+    const tx = inv * (dirY * sx - dirX * sy), ty = inv * (-plY * sx + plX * sy);
+    if (ty <= 0.1) continue;
+    const scrX = (W / 2) * (1 + tx / ty);
+    const shrink = q.grab ? Math.max(0, 1 - q.grab) : 1;
+    const size = (H / ty) * 0.55 * shrink;
+    const bob = Math.sin(q.ph) * 6 / ty;
+    const top = H / 2 + (H / ty) * 0.5 - size - (H / ty) * 0.05 + bob;
+    const x0 = Math.round(scrX - size / 2), x1 = Math.round(scrX + size / 2);
+    const img = SPRITES[q.f];
+    for (let x = Math.max(0, x0); x < Math.min(W, x1); x++) {
+      if (ty >= zbuf[x]) continue;
+      const texX = ((x - x0) / (x1 - x0) * img.width) | 0;
+      ctx.drawImage(img, texX, 0, 1, img.height, x, top, 1, size);
+    }
+  }
+  drawMinimap();
+  document.getElementById('prompt').style.display = targetable() ? 'block' : 'none';
+}
+
+function drawMinimap() {
+  const s = level === 1 ? 6 : 5, ox = W - MW * s - 8, oy = 8;
+  ctx.globalAlpha = 0.75;
+  for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
+    ctx.fillStyle = wall(x, y) ? '#8b80d0' : '#120d2a'; ctx.fillRect(ox + x * s, oy + y * s, s, s);
+  }
+  ctx.globalAlpha = 1;
+  for (const q of quarks) {
+    ctx.fillStyle = QUARKS[q.f].color; ctx.beginPath(); ctx.arc(ox + q.x * s, oy + q.y * s, 2, 0, 7); ctx.fill();
+  }
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ox + player.x * s, oy + player.y * s, 2.5, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.moveTo(ox + player.x * s, oy + player.y * s);
+  ctx.lineTo(ox + (player.x + Math.cos(player.a) * 2) * s, oy + (player.y + Math.sin(player.a) * 2) * s); ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+function loop(t) {
+  const dt = Math.min(0.05, (t - lastT) / 1000); lastT = t;
+  if (running) { update(dt); render(); }
+  requestAnimationFrame(loop);
+}
+
+// ---------- Menú ----------
+function pickLevel(lv, btn) {
+  level = lv;
+  btn.parentNode.querySelectorAll('button').forEach(b => b.classList.toggle('sel', b === btn));
+  btn.blur();
+}
+function showMenu(header, meId) {
+  const hofHtml = [1, 2].map(lv => {
+    const hof = loadHof(lv);
+    return `<div style="flex:1"><h3>🏆 Nivell ${lv}</h3>${hof.length ? `<table>${hof.map((e, i) =>
+      `<tr class="${e.id === meId ? 'me' : ''}"><td>${i + 1}.</td><td style="text-align:left">${escapeHtml(e.name)}</td><td>${e.t.toFixed(1)} s</td></tr>`).join('')}</table>`
+      : '<p style="font-size:13px">Encara ningú!</p>'}</div>`;
+  }).join('');
+  const legend = Object.keys(QUARKS).map(f => `<div id="lg-${f}">${f} · ${QUARKS[f].name}</div>`).join('');
+  document.getElementById('card').innerHTML = `${header}
+    <div id="legend">${legend}</div>
+    <p style="font-size:13px">Al mapa, cada punt de color és un quark.</p>
+    <div class="levels">
+      ${[1, 2].map(lv => `<button class="${lv === level ? 'sel' : ''}" onclick="pickLevel(${lv}, this)">Nivell ${lv} · ${LEVELS[lv].name}</button>`).join('')}
+      <button disabled title="Aviat">Aviat: Color</button>
+    </div>
+    <button class="go" onclick="startGame()">Comença (Enter)</button>
+    <div id="hof" style="display:flex;gap:24px;max-width:520px">${hofHtml}</div>`;
+  for (const f in QUARKS) document.getElementById('lg-' + f).prepend(makeQuarkSprite(f, 56));
+  document.getElementById('overlay').style.display = 'flex';
+}
+showMenu(`<h1>Caça Quarks</h1>
+  <p><i>La Força que ens uneix</i></p>
+  <p>Apareix un barió amb els seus nombres quàntics. Recorre el laberint i captura
+  els <b>3 quarks</b> que el formen. Els nombres quàntics dels quarks capturats se sumen:
+  quan coincideixin tots, has format el barió! Forma'n ${ROUNDS} i entra al Saló de la Fama.</p>`);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
