@@ -563,6 +563,7 @@ function showMenu(header, meId) {
       <button disabled title="Aviat">Aviat: Color</button>
     </div>
     <button class="go" onclick="startGame()">Comença (Enter)</button>
+    <p><a href="fiche.html" target="_blank" style="color:var(--acc)">📄 Fitxa dels quarks</a></p>
     <div id="hof" style="display:flex;gap:24px;max-width:520px">${hofHtml}</div>`;
   for (const f in QUARKS) document.getElementById('lg-' + f).prepend(makeQuarkSprite(f, 56));
   document.getElementById('overlay').style.display = 'flex';
