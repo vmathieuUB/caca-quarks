@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ca">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fitxa dels Quarks</title>
+<style>
+  @page { size: A4; margin: 14mm; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #fff; color: #1b1240; font-family: system-ui, "Segoe UI", sans-serif; }
+  main { max-width: 190mm; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 34px; margin: 0; }
+  .sub { color: #5b5490; margin: 4px 0 20px; }
+  table { width: 100%; border-collapse: collapse; font-size: 18px; }
+  th { background: #221b45; color: #fff; padding: 10px 6px; font-weight: 600; font-size: 15px; }
+  th:first-child { border-radius: 10px 0 0 0; } th:last-child { border-radius: 0 10px 0 0; }
+  td { padding: 6px; text-align: center; border-bottom: 1px solid #e3e0f2; }
+  td.q { display: flex; align-items: center; gap: 10px; text-align: left; }
+  td.q canvas { width: 56px; height: 56px; }
+  td.q b { font-size: 26px; }
+  td.q span { color: #5b5490; font-size: 14px; display: block; }
+  td.zero { color: #b9b4d6; }
+  td.nz { font-weight: 700; }
+  .boxes { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 22px; }
+  .box { border: 2px solid #e3e0f2; border-radius: 12px; padding: 12px 16px; font-size: 15px; line-height: 1.5; }
+  .box h2 { font-size: 17px; margin: 0 0 6px; }
+  .sum { font-variant-numeric: tabular-nums; }
+  footer { margin-top: 18px; color: #8a84b8; font-size: 12px; text-align: center; }
+  @media print { main { padding: 0; } th { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Els quarks i els seus nombres quàntics</h1>
+  <div class="sub"><i>La Força que ens uneix</i> · Caça Quarks</div>
+
+  <table>
+    <thead><tr><th>Quark</th><th>Càrrega elèctrica<br>Q</th><th>Isospí<br>I₃</th><th>Estranyesa<br>S</th><th>Encant<br>C</th><th>Bellesa<br>B′</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+
+  <div class="boxes">
+    <div class="box">
+      <h2>Com es forma un barió?</h2>
+      Un barió està fet de <b>3 quarks</b>. Els seus nombres quàntics són la <b>suma</b> dels dels quarks.
+      <p class="sum">Exemple, el protó <b>p = u u d</b>:<br>
+      Q = +2/3 +2/3 −1/3 = <b>+1</b><br>
+      I₃ = +1/2 +1/2 −1/2 = <b>+1/2</b><br>
+      S = C = B′ = <b>0</b></p>
+    </div>
+    <div class="box">
+      <h2>Trucs per trobar els quarks</h2>
+      • <b>S</b> et diu quants quarks <b>s</b> hi ha (S = −2 → dos s).<br>
+      • <b>C</b> et diu quants quarks <b>c</b> i <b>B′</b> quants quarks <b>b</b>.<br>
+      • Els que falten són <b>u</b> o <b>d</b>: mira <b>I₃</b> o <b>Q</b> per decidir-ho.<br>
+      • Antiquarks: tots els nombres canvien de signe.
+    </div>
+  </div>
+  <footer>Convencions del PDG: S = −1 per al quark s, B′ = −1 per al quark b.</footer>
+</main>
+<script>
+const QUARKS = {
+  u: { name:'up (amunt)',        Q:'+2/3', I3:'+1/2', S:'0',  C:'0',  B:'0',  color:'#ff8a3d' },
+  d: { name:'down (avall)',      Q:'−1/3', I3:'−1/2', S:'0',  C:'0',  B:'0',  color:'#3d9bff' },
+  s: { name:'strange (estrany)', Q:'−1/3', I3:'0',    S:'−1', C:'0',  B:'0',  color:'#3ddc84' },
+  c: { name:'charm (encant)',    Q:'+2/3', I3:'0',    S:'0',  C:'+1', B:'0',  color:'#ff5fa8' },
+  b: { name:'bottom (bellesa)',  Q:'−1/3', I3:'0',    S:'0',  C:'0',  B:'−1', color:'#a26bff' },
+};
+// mateix personatge que al joc
+function makeQuarkSprite(f, size = 128) {
+  const c = document.createElement('canvas'); c.width = c.height = size;
+  const g = c.getContext('2d'), s = size / 128, col = QUARKS[f].color;
+  g.scale(s, s);
+  g.strokeStyle = col; g.lineWidth = 8; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(22, 72); g.lineTo(8, 52); g.moveTo(106, 72); g.lineTo(120, 52); g.stroke();
+  const grd = g.createRadialGradient(50, 45, 8, 64, 66, 54);
+  grd.addColorStop(0, '#fff'); grd.addColorStop(0.18, col); grd.addColorStop(1, shade(col, -0.35));
+  g.fillStyle = grd; g.beginPath(); g.arc(64, 68, 48, 0, 7); g.fill();
+  for (const ex of [48, 80]) {
+    g.fillStyle = '#fff'; g.beginPath(); g.ellipse(ex, 56, 11, 13, 0, 0, 7); g.fill();
+    g.fillStyle = '#1b1240'; g.beginPath(); g.arc(ex + 2, 58, 6, 0, 7); g.fill();
+    g.fillStyle = '#fff'; g.beginPath(); g.arc(ex + 4, 55, 2, 0, 7); g.fill();
+  }
+  g.fillStyle = '#ff7aa880'; g.beginPath(); g.arc(36, 76, 6, 0, 7); g.arc(92, 76, 6, 0, 7); g.fill();
+  g.strokeStyle = '#1b1240'; g.lineWidth = 4;
+  g.beginPath(); g.arc(64, 72, 12, 0.15 * Math.PI, 0.85 * Math.PI); g.stroke();
+  g.fillStyle = '#fff'; g.strokeStyle = shade(col, -0.5); g.lineWidth = 5;
+  g.font = 'bold 30px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.strokeText(f, 64, 101); g.fillText(f, 64, 101);
+  if (f === 's') { g.fillStyle = '#1b1240'; g.fillRect(34, 48, 60, 6); }
+  if (f === 'c') { star(g, 64, 18, 9, '#ffe066'); }
+  if (f === 'b') { g.fillStyle = '#ffe066'; g.beginPath(); g.moveTo(44, 26); g.lineTo(50, 12); g.lineTo(58, 22); g.lineTo(64, 8); g.lineTo(70, 22); g.lineTo(78, 12); g.lineTo(84, 26); g.fill(); }
+  return c;
+}
+function star(g, x, y, r, col) {
+  g.fillStyle = col; g.beginPath();
+  for (let i = 0; i < 10; i++) { const a = i * Math.PI / 5 - Math.PI / 2, rr = i % 2 ? r * 0.45 : r; g.lineTo(x + rr * Math.cos(a), y + rr * Math.sin(a)); }
+  g.fill();
+}
+function shade(hex, k) {
+  const n = parseInt(hex.slice(1), 16), f = v => Math.round(v * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+const rows = document.getElementById('rows');
+for (const f in QUARKS) {
+  const q = QUARKS[f], tr = document.createElement('tr');
+  tr.innerHTML = `<td class="q"><div></div><div><b>${f}</b><span>${q.name}</span></div></td>` +
+    ['Q', 'I3', 'S', 'C', 'B'].map(k => `<td class="${q[k] === '0' ? 'zero' : 'nz'}">${q[k]}</td>`).join('');
+  tr.querySelector('.q div').appendChild(makeQuarkSprite(f, 112));
+  rows.appendChild(tr);
+}
+</script>
+</body>
+</html>
