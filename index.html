@@ -2,7 +2,7 @@
 <html lang="ca">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Caça Quarks</title>
 <style>
   :root { --bg:#14102a; --panel:#221b45; --ink:#f4f1ff; --muted:#a9a2d6; --ok:#4ade80; --bad:#f87171; --acc:#fbbf24; }
@@ -48,6 +48,46 @@
   #legend { display:flex; gap:8px; justify-content:center; margin:14px 0; flex-wrap:wrap; }
   #legend div { text-align:center; font-size:12px; color:var(--muted); }
   #legend canvas { width:56px; height:56px; display:block; }
+  /* controls tàctils (només es mostren en pantalles tàctils) */
+  #touch { display:none; }
+  body.touch #touch { display:block; }
+  body.touch #view { touch-action:none; -webkit-user-select:none; user-select:none; }
+  body.touch .keys, body.touch .kbonly { display:none; }
+  #joy { position:absolute; left:16px; bottom:16px; width:120px; height:120px; border-radius:50%; background:#ffffff1c; border:2px solid #ffffff40; }
+  #knob { position:absolute; left:50%; top:50%; width:52px; height:52px; margin:-26px 0 0 -26px; border-radius:50%; background:#ffffffb0; }
+  .tbtn { position:absolute; border:0; border-radius:50%; font:inherit; font-weight:800; color:#1a1300; -webkit-tap-highlight-color:transparent; }
+  #bCatch { right:16px; bottom:24px; width:96px; height:96px; background:#fbbf24cc; font-size:15px; }
+  #bCatch.ready { background:#fbbf24; box-shadow:0 0 0 6px #fbbf2466; }
+  #bFree { right:124px; bottom:16px; width:56px; height:56px; background:#ffffff40; color:#fff; font-size:20px; }
+  /* mòbil vertical: panell sota la pantalla */
+  @media (max-width: 900px) and (orientation: portrait) {
+    #wrap { flex-direction:column; padding:8px; gap:8px; width:100%; }
+    canvas#screen { width:100%; }
+    body.touch #touch { position:relative; height:136px; margin-top:6px; } /* controls sota la vista */
+    #side { width:100%; padding:10px 12px; }
+    #side h2 { font-size:24px; }
+    table { font-size:14px; }
+    #slots { margin:8px 0 0; }
+  }
+  /* mòbil horitzontal: panell estret al costat */
+  @media (max-height: 520px) and (orientation: landscape) {
+    #wrap { padding:6px; gap:6px; }
+    canvas#screen { width:min(calc(100vw - 240px), calc((100dvh - 12px) * 1.6)); }
+    #side { width:220px; padding:8px 10px; max-height:calc(100dvh - 12px); overflow:auto; }
+    #side h2 { font-size:20px; } #side .sub { font-size:12px; margin-bottom:4px; }
+    table { font-size:12px; } th, td { padding:2px; } thead th { font-size:10px; }
+    #slots { margin:6px 0 0; gap:6px; } .slot { width:52px; height:52px; } .slot canvas { width:46px; height:46px; }
+    #joy { width:96px; height:96px; left:10px; bottom:10px; }
+    #bCatch { width:80px; height:80px; right:10px; bottom:14px; }
+    #bFree { right:98px; bottom:10px; }
+  }
+  @media (max-width: 700px), (max-height: 520px) {
+    .card { padding:16px; max-height:96dvh; overflow:auto; }
+    .card h1 { font-size:28px; }
+    .card p { font-size:14px; margin:6px 0; }
+    #legend canvas { width:40px; height:40px; }
+    #hof { flex-direction:column; gap:4px !important; }
+  }
 </style>
 </head>
 <body>
@@ -55,7 +95,12 @@
   <div id="view">
     <canvas id="screen" width="640" height="400"></canvas>
     <div id="cross"></div>
-    <div id="prompt">Prem <kbd>ESPAI</kbd> per capturar</div>
+    <div id="prompt"><span class="kb">Prem <kbd>ESPAI</kbd> per capturar</span></div>
+    <div id="touch">
+      <div id="joy"><div id="knob"></div></div>
+      <button class="tbtn" id="bFree">⌫</button>
+      <button class="tbtn" id="bCatch">CAPTURA</button>
+    </div>
     <div id="flash"></div>
   </div>
   <div id="side">
@@ -355,6 +400,49 @@ addEventListener('keyup', e => keys[e.code] = false);
 cv.addEventListener('click', () => cv.requestPointerLock && cv.requestPointerLock());
 addEventListener('mousemove', e => { if (document.pointerLockElement === cv && running) player.a += e.movementX * 0.0025; });
 
+// ---------- Controls tàctils ----------
+// joystick: amunt/avall = avançar/recular, esquerra/dreta = girar; lliscar el dit per la pantalla també gira
+const joy = { x: 0, y: 0, id: null };
+if (matchMedia('(pointer: coarse)').matches) {
+  document.body.classList.add('touch');
+  document.querySelector('#prompt .kb').textContent = 'Toca CAPTURA!';
+}
+(() => {
+  const view = document.getElementById('view'), pad = document.getElementById('joy'), knob = document.getElementById('knob');
+  let lookId = null, lookX = 0;
+  const setJoy = t => {
+    const r = pad.getBoundingClientRect(), R = r.width / 2;
+    let dx = (t.clientX - r.left - R) / R, dy = (t.clientY - r.top - R) / R;
+    const m = Math.hypot(dx, dy); if (m > 1) { dx /= m; dy /= m; }
+    joy.x = dx; joy.y = dy;
+    knob.style.transform = `translate(${dx * R * 0.6}px, ${dy * R * 0.6}px)`;
+  };
+  view.addEventListener('touchstart', e => {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (t.target.closest('.tbtn')) continue;
+      if (t.target.closest('#joy') && joy.id === null) { joy.id = t.identifier; setJoy(t); }
+      else if (lookId === null) { lookId = t.identifier; lookX = t.clientX; }
+    }
+  }, { passive: false });
+  view.addEventListener('touchmove', e => {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (t.identifier === joy.id) setJoy(t);
+      if (t.identifier === lookId && running) { player.a += (t.clientX - lookX) * 0.008; lookX = t.clientX; }
+    }
+  }, { passive: false });
+  const end = e => {
+    for (const t of e.changedTouches) {
+      if (t.identifier === joy.id) { joy.id = null; joy.x = joy.y = 0; knob.style.transform = ''; }
+      if (t.identifier === lookId) lookId = null;
+    }
+  };
+  view.addEventListener('touchend', end); view.addEventListener('touchcancel', end);
+  const tap = (id, fn) => document.getElementById(id).addEventListener('touchstart', e => { e.preventDefault(); if (running) fn(); }, { passive: false });
+  tap('bCatch', tryCapture); tap('bFree', release);
+})();
+
 function targetable() {
   let best = null, bd = 1.8;
   for (const q of quarks) {
@@ -446,6 +534,10 @@ function update(dt) {
   if (keys.KeyS || keys.ArrowDown) { mx -= ca; my -= sa; }
   if (keys.KeyA) { mx += sa; my -= ca; }
   if (keys.KeyD) { mx -= sa; my += ca; }
+  if (joy.id !== null) {
+    player.a += joy.x * rot;
+    if (Math.abs(joy.y) > 0.2) { mx -= ca * joy.y; my -= sa * joy.y; }
+  }
   const r = 0.25;
   if (!wall(player.x + mx * sp + Math.sign(mx) * r, player.y)) player.x += mx * sp;
   if (!wall(player.x, player.y + my * sp + Math.sign(my) * r)) player.y += my * sp;
@@ -516,7 +608,9 @@ function render() {
     }
   }
   drawMinimap();
-  document.getElementById('prompt').style.display = targetable() ? 'block' : 'none';
+  const ready = !!targetable();
+  document.getElementById('prompt').style.display = ready ? 'block' : 'none';
+  document.getElementById('bCatch').classList.toggle('ready', ready);
 }
 
 function drawMinimap() {
@@ -562,7 +656,7 @@ function showMenu(header, meId) {
       ${[1, 2].map(lv => `<button class="${lv === level ? 'sel' : ''}" onclick="pickLevel(${lv}, this)">Nivell ${lv} · ${LEVELS[lv].name}</button>`).join('')}
       <button disabled title="Aviat">Aviat: Color</button>
     </div>
-    <button class="go" onclick="startGame()">Comença (Enter)</button>
+    <button class="go" onclick="startGame()">Comença <span class="kbonly">(Enter)</span></button>
     <p><a href="fiche.html" target="_blank" style="color:var(--acc)">📄 Fitxa dels quarks</a></p>
     <div id="hof" style="display:flex;gap:24px;max-width:520px">${hofHtml}</div>`;
   for (const f in QUARKS) document.getElementById('lg-' + f).prepend(makeQuarkSprite(f, 56));
